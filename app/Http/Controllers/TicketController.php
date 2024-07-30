@@ -19,6 +19,7 @@ use App\Model\RapidXUser;
 // PACKAGE
 use DataTables;
 use Carbon\Carbon;
+use Mail;
 
 class TicketController extends Controller
 {
@@ -440,6 +441,18 @@ class TicketController extends Controller
 		                        'created_at' => date('Y-m-d H:i:s'),
 		                        'updated_at' => date('Y-m-d H:i:s'),
 		                    ]);
+
+							$email_content = 'The ticket #' . $ticket_id . ' has been created. Request: ' . $ticket_data->request;
+							$to = [RapidXUser::where('id', $ticket_data->requestor)->first()->email];
+							$cc = [];
+
+							if($ticket_data->cc != null) {
+								$cc = explode(',', $ticket_data->cc);
+							}
+
+							Mail::send('mail.ticket', ['email_content' => $email_content], function($message) use($to, $cc, $ticket_data){
+								$message->to($to)->cc($cc)->subject('ISS Service Request - Ticket #' . $ticket_data->id . ": " . $ticket_data->subject);
+							});
                             DB::commit();
 		                    return response()->json(['auth' => 1, 'result' => 1, 'error' => null]);
 		                }
@@ -601,17 +614,32 @@ class TicketController extends Controller
 		                    	->where('logdel', 0)
 		                        ->update($update_data);
 
+							$ticket_data = Ticket::where('id', $request->ticket_id)->first();
+
                             $log_description = "";
+							$subject = "";
 
                             if($request->status == 5) {
                                 $log_description = "The ticket has been cancelled by the requestor.";
+								$subject = 'ISS Service Request - Ticket #' . $ticket_data->id . ": CANCELLED : " . $ticket_data->subject;
                             }
                             else if($request->status == 4) {
                                 $confirmed_by = RapidXUser::where('id', $_SESSION["rapidx_user_id"])->first()->name;
                                 $log_description = "The ticket has been confirmed by " . $confirmed_by  . ".";
+								$subject = 'ISS Service Request - Ticket #' . $ticket_data->id . ": CONFIRMED : " . $ticket_data->subject;
                             }
 
-                            $ticket_data = Ticket::where('id', $request->ticket_id)->first();
+							$email_content = $log_description;
+							$to = [RapidXUser::where('id', $ticket_data->requestor)->first()->email];
+							$cc = [];
+
+							if($ticket_data->cc != null) {
+								$cc = explode(',', $ticket_data->cc);
+							}
+
+							Mail::send('mail.ticket', ['email_content' => $email_content], function($message) use($to, $cc, $ticket_data, $subject){
+								$message->to($to)->cc($cc)->subject($subject);
+							});
 
                             TicketLog::insert([
                                 'ticket_id' => $request->ticket_id,
@@ -732,17 +760,33 @@ class TicketController extends Controller
                     $assignee_name = RapidXUser::where('id', $request->assignee)->first()->name;
                     $ticket_data = Ticket::where('id', $request->ticket_id)->first();
 
+					$description = 'The ticket has been assigned to ' .
+                        $assignee_name . ' as ' . $this->get_str_trt($request->trt) . ' that will due on ' . Carbon::parse($due_date)->toFormattedDateString() . ' ' . Carbon::parse($due_date)->format('h:i A') . '.';
+
                     TicketLog::insert([
                         'ticket_id' => $request->ticket_id,
                         'action' => 2,
                         'data' => $ticket_data,
-                        'description' => 'The ticket has been assigned to ' .
-                        $assignee_name . ' as ' . $this->get_str_trt($request->trt) . ' that will due on ' . Carbon::parse($due_date)->toFormattedDateString() . ' ' . Carbon::parse($due_date)->format('h:i A') . '.',
+                        'description' => $description,
                         'created_by' => $_SESSION["rapidx_user_id"],
                         'last_updated_by' => $_SESSION["rapidx_user_id"],
                         'created_at' => date('Y-m-d H:i:s'),
                         'updated_at' => date('Y-m-d H:i:s'),
                     ]);
+
+					$email_content = $description;
+					$to = [RapidXUser::where('id', $ticket_data->requestor)->first()->email];
+					$cc = [];
+
+					if($ticket_data->cc != null) {
+						$cc = explode(',', $ticket_data->cc);
+					}
+
+					$cc[] = RapidXUser::where('id', $ticket_data->assignee)->first()->email;
+
+					Mail::send('mail.ticket', ['email_content' => $email_content], function($message) use($to, $cc, $ticket_data){
+						$message->to($to)->cc($cc)->subject('ISS Service Request - Ticket #' . $ticket_data->id . ": ASSIGNED : " . $ticket_data->subject);
+					});
 
                     DB::commit();
 					return response()->json(['auth' => 1, 'result' => 1, 'error' => null]);
@@ -847,17 +891,33 @@ class TicketController extends Controller
                     $assignee_name = RapidXUser::where('id', $request->second_assignee)->first()->name;
                     $ticket_data = Ticket::where('id', $request->ticket_id)->first();
 
+					$description = 'The ticket has been reassigned to ' .
+                        $assignee_name . ' as ' . $this->get_str_trt($request->trt) . ' that will due on ' . Carbon::parse($due_date)->toFormattedDateString() . ' ' . Carbon::parse($due_date)->format('h:i A')  . '.';
+
                     TicketLog::insert([
                         'ticket_id' => $request->ticket_id,
                         'action' => 7, // reassigned
                         'data' => $ticket_data,
-                        'description' => 'The ticket has been reassigned to ' .
-                        $assignee_name . ' as ' . $this->get_str_trt($request->trt) . ' that will due on ' . Carbon::parse($due_date)->toFormattedDateString() . ' ' . Carbon::parse($due_date)->format('h:i A')  . '.',
+                        'description' => $description,
                         'created_by' => $_SESSION["rapidx_user_id"],
                         'last_updated_by' => $_SESSION["rapidx_user_id"],
                         'created_at' => date('Y-m-d H:i:s'),
                         'updated_at' => date('Y-m-d H:i:s'),
                     ]);
+
+					$email_content = $description;
+					$to = [RapidXUser::where('id', $ticket_data->requestor)->first()->email];
+					$cc = [];
+
+					if($ticket_data->cc != null) {
+						$cc = explode(',', $ticket_data->cc);
+					}
+
+					$cc[] = RapidXUser::where('id', $ticket_data->second_assignee)->first()->email;
+
+					Mail::send('mail.ticket', ['email_content' => $email_content], function($message) use($to, $cc, $ticket_data){
+						$message->to($to)->cc($cc)->subject('ISS Service Request - Ticket #' . $ticket_data->id . ": REASSIGNED : " . $ticket_data->subject);
+					});
 
                     DB::commit();
 					return response()->json(['auth' => 1, 'result' => 1, 'error' => null]);
@@ -907,17 +967,31 @@ class TicketController extends Controller
                     $for_verification_by_name = RapidXUser::where('id', $_SESSION["rapidx_user_id"])->first()->name;
                     $ticket_data = Ticket::where('id', $request->ticket_id)->first();
 
+					$description = 'The ticket has been moved to "for verification" by ' .
+                        $for_verification_by_name . ' with remarks of "' . $request->remarks . '".';
+
                     TicketLog::insert([
                         'ticket_id' => $request->ticket_id,
                         'action' => 3,
                         'data' => $ticket_data,
-                        'description' => 'The ticket has been moved to "for verification" by ' .
-                        $for_verification_by_name . ' with remarks of "' . $request->remarks . '".',
+                        'description' => $description,
                         'created_by' => $_SESSION["rapidx_user_id"],
                         'last_updated_by' => $_SESSION["rapidx_user_id"],
                         'created_at' => date('Y-m-d H:i:s'),
                         'updated_at' => date('Y-m-d H:i:s'),
                     ]);
+
+					$email_content = $description;
+					$to = [RapidXUser::where('id', $ticket_data->requestor)->first()->email];
+					$cc = [];
+
+					if($ticket_data->cc != null) {
+						$cc = explode(',', $ticket_data->cc);
+					}
+
+					Mail::send('mail.ticket', ['email_content' => $email_content], function($message) use($to, $cc, $ticket_data){
+						$message->to($to)->cc($cc)->subject('ISS Service Request - Ticket #' . $ticket_data->id . ": FOR VERIFICATION : " . $ticket_data->subject);
+					});
 
                     DB::commit();
 					return response()->json(['auth' => 1, 'result' => 1, 'error' => null]);
@@ -957,17 +1031,35 @@ class TicketController extends Controller
                     $commentor_name = RapidXUser::where('id', $_SESSION["rapidx_user_id"])->first()->name;
                     $ticket_data = Ticket::where('id', $request->ticket_id)->first();
 
+					$description = $commentor_name . ' commented with "' .
+					$request->comment . '"';
+
                     TicketLog::insert([
                         'ticket_id' => $request->ticket_id,
                         'action' => 8, // comment
                         'data' => $ticket_data,
-                        'description' => $commentor_name . ' commented with "' .
-                        $request->comment . '"',
+                        'description' => $description,
                         'created_by' => $_SESSION["rapidx_user_id"],
                         'last_updated_by' => $_SESSION["rapidx_user_id"],
                         'created_at' => date('Y-m-d H:i:s'),
                         'updated_at' => date('Y-m-d H:i:s'),
                     ]);
+
+					$email_content = $description;
+					$to = [RapidXUser::where('id', $ticket_data->requestor)->first()->email];
+					$cc = [];
+
+					if($ticket_data->cc != null) {
+						$cc = explode(',', $ticket_data->cc);
+					}
+
+					if($ticket_data->second_assignee != null) {
+						$cc[] = RapidXUser::where('id', $ticket_data->second_assignee)->first()->email;
+					}
+
+					Mail::send('mail.ticket', ['email_content' => $email_content], function($message) use($to, $cc, $ticket_data){
+						$message->to($to)->cc($cc)->subject('ISS Service Request - Ticket #' . $ticket_data->id . ": COMMENT : " . $ticket_data->subject);
+					});
 
                     DB::commit();
 					return response()->json(['auth' => 1, 'result' => 1, 'error' => null]);
